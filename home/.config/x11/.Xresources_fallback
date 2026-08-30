@@ -1,0 +1,113 @@
+! --- ST ---
+! Font configuration
+st.font: Atkinson Hyperlegible Mono:size=14
+st.font0: NotoColorEmoji:pixelsize=14:antialias=true:autohint=true
+st.font1: JetBrainsMonoNL Nerd Font:size=14
+st.font2: Noto Sans Symbols 2:size=14
+
+! Color scheme
+st.color0: #000000
+st.color1: #cc6666
+st.color2: #b5bd68
+st.color3: #f0c674
+st.color4: #81a2be
+st.color5: #b294bb
+st.color6: #8abeb7
+st.color7: #c5c8c6
+st.color8: #303030
+st.color9: #d54e53
+
+! pliki wykonywalne
+st.color10: #b9ca4a
+st.color11: #e7c547
+st.color12: #7aa6da
+st.color13: #c397d8
+st.color14: #70c0b1
+st.color15: #eaeaea
+
+! Background and foreground colors
+! Keep terminal background OLED black while ANSI colors still follow pywal.
+st.background: #000000
+st.foreground: #c5c8c6
+st.cursorColor: #c5c8c6
+
+! Terminal settings
+st.termname: xterm-256color
+st.shell: /bin/zsh
+st.minlatency: 8
+st.maxlatency: 33
+st.blinktimeout: 500
+st.bellvolume: 0
+st.tabspaces: 4
+st.borderpx: 2
+st.cwscale: 1.0
+st.chscale: 1.0
+st.alpha: 1.0
+
+! --- DWM ---
+! Konfiguracja kolorów
+dwm.color0: #000000
+dwm.color8: #1f1f1f
+dwm.foreground: #8a8a8a
+dwm.background: #000000
+dwm.color4: #5a5a5a
+dwm.color12: #c0c0c0
+
+! Ustawienia obramowania okien
+dwm.normbordercolor: #1f1f1f
+dwm.selbordercolor: #5a5a5a
+
+! Konfiguracja czcionek
+dwm.font: Atkinson Hyperlegible Mono:size=12
+dwm.fontemoji: NotoColorEmoji:pixelsize=12:antialias=true:autohint=true
+dwm.fontnerd: JetBrainsMonoNL Nerd Font:size=12
+dwm.fontsymbols: Noto Sans Symbols 2:size=12
+dwm.dmenufont: Atkinson Hyperlegible Mono:size=12
+dwm.font2: NotoColorEmoji:pixelsize=12:antialias=true:autohint=true
+
+! Marginesy i odstępy
+dwm.borderpx: 3
+dwm.snap: 32
+dwm.gappih: 0
+dwm.gappiv: 0
+dwm.gappoh: 0
+dwm.gappov: 0
+
+! Pozostałe ustawienia
+dwm.swallowfloating: 0
+dwm.smartgaps: 0
+dwm.showbar: 1
+dwm.topbar: 1
+
+! OLED-black bar; the blue selection is reserved for the focused border/tag.
+dwm.statusfgcolor: #8a8a8a
+dwm.statusbgcolor: #000000
+dwm.tagsnormfgcolor: #8a8a8a
+dwm.tagsnormbgcolor: #000000
+dwm.tagsselbgcolor: #000000
+dwm.tagsselfgcolor: #c0c0c0
+dwm.infonormfgcolor: #8a8a8a
+dwm.infonormbgcolor: #000000
+dwm.infoselfgcolor: #ffffff
+dwm.infoselbgcolor: #000000
+
+
+
+! --- dmenu ---
+! dmenu font configuration
+dmenu.font: Atkinson Hyperlegible Mono:size=12
+dmenu.fontemoji: NotoColorEmoji:pixelsize=12:antialias=true:autohint=true
+dmenu.fontnerd: JetBrainsMonoNL Nerd Font:size=12
+dmenu.fontsymbols: Noto Sans Symbols 2:size=12
+
+! dmenu normal colors (background and foreground)
+dmenu.background: #000000
+dmenu.foreground: #8a8a8a
+
+! dmenu selected item colors (background and foreground)
+dmenu.selbackground: #3a3a3a
+dmenu.selforeground: #d0d0d0
+
+! dmenu out colors (only applies with -o option)
+dmenu.outbackground: #000000
+dmenu.outforeground: #8a8a8a

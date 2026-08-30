@@ -1,0 +1,93 @@
+! --- ST ---
+! Font configuration
+st.font: Monospace-12
+st.font0: Monospace-12
+st.font1: Monospace-12
+st.font2: Monospace-12
+
+! Color scheme
+st.color0: "{color0}"
+st.color1: "{color1}"
+st.color2: "{color2}"
+st.color3: "{color3}"
+st.color4: "{color4}"
+st.color5: "{color5}"
+st.color6: "{color6}"
+st.color7: "{color7}"
+st.color8: "{color8}"
+st.color9: "{color9}"
+
+! pliki wykonywalne
+st.color10: "{color10}"
+st.color11: "{color11}"
+st.color12: "{color12}"
+st.color13: "{color13}"
+st.color14: "{color14}"
+st.color15: "{color15}"
+
+! Background and foreground colors
+st.background: "{background}"
+st.foreground: "{foreground}"
+st.cursorColor: $cursor
+
+! Terminal settings
+st.termname: xterm-256color
+st.shell: /bin/zsh
+st.minlatency: 8
+st.maxlatency: 33
+st.blinktimeout: 500
+st.bellvolume: 0
+st.tabspaces: 4
+st.borderpx: 2
+st.cwscale: 1.0
+st.chscale: 1.0
+st.alpha: 0.73
+
+! --- DWM ---
+! Konfiguracja kolorów
+dwm.color0: "{color0}"
+dwm.color8: "{color8}"
+dwm.foreground: "{foreground}"
+dwm.background: "{background}"
+dwm.color4: "{color4}"
+dwm.color12: "{color12}"
+
+! Ustawienia obramowania okien
+dwm.normbordercolor: "{color8}"
+dwm.selbordercolor: "{color1}"
+
+! Konfiguracja czcionek
+dwm.font: monospace:size=12
+dwm.font2: NotoColorEmoji:pixelsize=12:antialias=true:autohint=true
+
+! Marginesy i odstępy
+dwm.borderpx: 3
+dwm.snap: 32
+dwm.gappih: 20
+dwm.gappiv: 10
+dwm.gappoh: 10
+dwm.gappov: 30
+
+! Pozostałe ustawienia
+dwm.swallowfloating: 0
+dwm.smartgaps: 1
+dwm.showbar: 1
+dwm.topbar: 1
+
+
+
+! --- dmenu ---
+! dmenu font configuration
+dmenu.font: monospace:size=10
+
+! dmenu normal colors (background and foreground)
+dmenu.background: #ffffff 
+dmenu.foreground: #ffffff
+
+! dmenu selected item colors (background and foreground)
+dmenu.selbackground: #ffffff
+dmenu.selforeground: #ffffff
+
+! dmenu out colors (only applies with -o option)
+dmenu.outbackground: #ffffff
+dmenu.outforeground: #ffffff

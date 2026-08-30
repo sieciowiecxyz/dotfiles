@@ -1,0 +1,34 @@
+# Secrets and machine-specific state
+.env
+*.secret
+*.secrets
+*.pem
+*.key
+**/credentials*
+**/secrets*
+
+# Build products
+**/*.o
+home/.local/src/*/st
+home/.local/src/*/dwm
+home/.local/src/*/dmenu
+home/.local/src/*/dwmblocks
+home/.local/src/*/stest
+home/.local/src/*/dmenu_path
+home/.local/src/*/dmenu_run
+
+# Generated/cache files
+*.bak
+*.orig
+*.db
+*.sqlite*
+*.log
+
+# Private user data
+.bash_history*
+.Xauthority
+
+# Large binary assets
+*.jpg
+*.jpeg
+*.png

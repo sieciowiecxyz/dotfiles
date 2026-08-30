@@ -1,0 +1,26 @@
+#!/bin/sh
+
+case $BLOCK_BUTTON in
+    1) notify-send "🖥 CPU hogs" "$(ps axch -o cmd:15,%cpu --sort=-%cpu | head)\\n(100% per core)" ;;
+    2) setsid -f "$TERMINAL" -e htop ;;
+    3) notify-send "🖥 CPU module " "\- Shows CPU temperature.
+- Click to show intensive processes.
+- Middle click to open htop.
+- Right click to edit the script." ;;
+    6) setsid -f "$TERMINAL" -e "$EDITOR" "$0" ;;
+esac
+
+read cpu a b c idle rest < /proc/stat
+prev_total=$((a+b+c+idle))
+prev_idle=$idle
+
+sleep 0.5 
+
+read cpu a b c idle rest < /proc/stat
+total=$((a+b+c+idle))
+idle=$idle
+
+cpu_usage=$((100*( (total-prev_total) - (idle-prev_idle) ) / (total-prev_total) ))
+
+echo "$cpu_usage%"
+

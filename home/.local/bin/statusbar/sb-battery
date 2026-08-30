@@ -1,0 +1,84 @@
+#!/bin/bash
+
+output=""
+low_battery_notified="/tmp/low_battery_notified"
+critical_low_battery_notified="/tmp/critical_low_battery_notified"
+
+export WM="dwm"
+case "$(readlink -f /sbin/init)" in
+    *systemd*) ctl='systemctl hibernate' ;;
+    *runit*) ctl='zzz' ;;
+    *) ctl='loginctl hibernate' ;;
+esac
+
+for battery in /sys/class/power_supply/BAT?*; do
+    [ -n "${output}" ] && output+=" "
+    case "$(cat "$battery/status")" in
+        "Full") status="⚡" ;;
+        "Discharging") status="🔋" ;;
+        "Charging") status="🔌" ;;
+        "Not charging") status="🛑" ;;
+        "Unknown") status="♻" ;;
+        *) exit 1 ;;
+    esac
+    capacity="$(cat "$battery/capacity")"
+    [ "$status" = "🔋" ] && [ "$capacity" -le 25 ] && warn="❗"
+    output+="${status}${warn}${capacity}%"; unset warn
+done
+
+energy_now=$(cat /sys/class/power_supply/BAT0/energy_now)
+power_now=$(cat /sys/class/power_supply/BAT0/power_now)
+
+if [ $power_now -gt 0 ]; then
+    watts=$(echo "scale=2; $power_now / 1000000" | bc)
+    hours_left=$(echo "scale=2; $energy_now / $power_now" | bc)
+    output+=" ${watts}W ${hours_left}h"
+else
+    output+=""
+fi
+
+for battery in /sys/class/power_supply/BAT?*; do
+    status="$(cat "$battery/status")"
+    capacity="$(cat "$battery/capacity")"
+
+    if [ "$capacity" -gt 4 ] && [ -f "$critical_low_battery_notified" ]; then
+        rm "$critical_low_battery_notified"
+    fi
+
+    if [ "$capacity" -gt 25 ] && [ -f "$low_battery_notified" ]; then
+        rm "$low_battery_notified"
+    fi
+
+    if [ "$status" = "Discharging" ] && [ "$capacity" -le 15 ] && [ ! -f "$low_battery_notified" ]; then
+	notify-send -u normal "Low Battery" "Battery level is getting low. Consider plugging in your charger."
+	touch "$low_battery_notified"
+    fi
+
+    if [ "$status" = "Discharging" ] && [ "$capacity" -le 4 ] && [ ! -f "$critical_low_battery_notified" ]; then
+	notify-send -u critical "Critical Low Battery" "The PC will hibernate in 60 seconds unless the charger is connected."
+        touch "$critical_low_battery_notified"
+        (
+        hibernate=true
+        for i in $(seq 1 60); do
+            for battery in /sys/class/power_supply/BAT?*; do
+                status=$(cat "$battery/status")
+                if [ "$status" == "Charging" ]; then
+                    hibernate=false
+                    break 2 
+                fi
+            done
+            sleep 1
+        done
+
+        if $hibernate; then
+            $ctl
+        else
+            notify-send -u normal "Charging" "Battery started charging, will not hibernate."
+        fi
+        ) &
+    fi
+done
+
+echo $output
+
+

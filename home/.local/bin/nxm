@@ -1,0 +1,17 @@
+#!/bin/sh
+#rclone mount nx33935.your-storageshare.de: /home/sieciowiec/nextcloud \
+#  --vfs-cache-mode writes \
+#  --dir-cache-time 1m \
+#  --attr-timeout 5s \
+#  --vfs-read-chunk-size 64M \
+#  --vfs-read-chunk-size-limit 500M \
+#  --allow-other &
+
+rclone mount nx33935.your-storageshare.de: /home/sieciowiec/nextcloud \
+  --vfs-cache-mode writes \
+  --allow-other \
+  --uid=$(id -u) --gid=$(id -g) \
+  --dir-cache-time 1m \
+  --attr-timeout 5s \
+  --vfs-read-chunk-size 64M \
+  --vfs-read-chunk-size-limit 500M &

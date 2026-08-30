@@ -1,0 +1,14 @@
+#!/bin/bash
+
+dunstconf="${XDG_CONFIG_HOME:-$HOME/.config}/dunst/dunstrc"
+zathuraconf="${XDG_CONFIG_HOME:-$HOME/.config}/zathura/zathurarc"
+source "${XDG_CACHE_HOME:-$HOME/.cache}/wal/colors.sh"
+mkdir -p "${dunstconf%/*}" "${zathuraconf%/*}" #"${xresourceconf%/*}"
+mv -n "$dunstconf" "$dunstconf.bak"
+mv -n "$zathuraconf" "$zathuraconf.bak"
+ln -sf "${XDG_CACHE_HOME:-$HOME/.cache}/wal/dunstrc" "$dunstconf"
+ln -sf "${XDG_CACHE_HOME:-$HOME/.cache}/wal/zathurarc" "$zathuraconf"
+
+# Wywołujemy Twój customowy skrypt, aby poprawne fonty (Atkinson) trafiły do xrdb!
+gen-xresources
+

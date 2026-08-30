@@ -1,0 +1,35 @@
+#!/bin/sh
+
+# A dmenu wrapper script for system functions.
+export WM="dwm"
+case "$(readlink -f /sbin/init)" in
+	*systemd*) ctl='systemctl' ;;
+	*) ctl='loginctl' ;;
+esac
+
+wmpid(){
+	wid="$(xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | awk -F'# ' '{print $2}')"
+	if [ -n "$wid" ]; then
+		pid="$(xprop -id "$wid" _NET_WM_PID 2>/dev/null | awk -F'= ' '/_NET_WM_PID/ {print $2}')"
+		[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && {
+			printf '%s\n' "$pid"
+			return
+		}
+	fi
+
+	tree="$(pstree -ps $$)"
+	tree="${tree#*$WM(}"
+	printf '%s\n' "${tree%%)*}"
+}
+
+case "$(printf "🔒 lock\n🚪 leave %s\n♻ renew %s\n🐻 hibernate\n🔃 reboot\n🖥 shutdown\n💤 sleep\n📺 display off" "$WM" "$WM" | dmenu -i -p 'Action: ')" in
+	'🔒 lock') slock ;;
+	"🚪 leave $WM") kill -TERM "$(wmpid)" ;;
+	"♻ renew $WM") kill -HUP "$(wmpid)" ;;
+	'🐻 hibernate') slock & $ctl hibernate ;;
+	'💤 sleep') slock & $ctl suspend -i ;;
+	'🔃 reboot') $ctl reboot -i ;;
+	'🖥 shutdown') $ctl poweroff -i ;;
+	'📺 display off') xset dpms force off ;;
+	*) exit 1 ;;
+esac
