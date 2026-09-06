@@ -1,0 +1,107 @@
+#!/bin/sh
+
+# Shows the active MPRIS player, usually browser/YouTube Music/Spotify.
+
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/dwm"
+cache_file="$cache_dir/sb-media.last"
+scroll_file="$cache_dir/sb-media.scroll"
+grace="${MEDIA_GRACE_SECONDS:-8}"
+scroll_debounce="${MEDIA_SCROLL_DEBOUNCE_MS:-500}"
+mkdir -p "$cache_dir"
+
+sigstatus() {
+	pkill -RTMIN+11 "${STATUSBAR:-dwmblocks}" 2>/dev/null || true
+}
+
+now_ms() {
+	date +%s%3N
+}
+
+show_cached() {
+	[ -s "$cache_file" ] || exit 0
+	set -- $(sed -n '1p' "$cache_file")
+	[ -n "$1" ] || exit 0
+	[ $(( $(date +%s) - $1 )) -le "$grace" ] || exit 0
+	sed '1d' "$cache_file"
+	exit 0
+}
+
+write_cache() {
+	{
+		date +%s
+		printf '%s\n' "$1"
+	} > "$cache_file"
+}
+
+run_scrolled() {
+	now="$(now_ms)"
+	last="$(cat "$scroll_file" 2>/dev/null || printf 0)"
+	[ $((now - last)) -lt "$scroll_debounce" ] && exit 0
+	printf '%s\n' "$now" > "$scroll_file"
+	playerctl "$1" >/dev/null 2>&1 && sigstatus
+	exit 0
+}
+
+fmt_time() {
+	awk -v s="${1:-0}" 'BEGIN {
+		if (s < 0) s = 0
+		h = int(s / 3600)
+		m = int((s % 3600) / 60)
+		sec = int(s % 60)
+		if (h > 0)
+			printf "%d:%02d:%02d", h, m, sec
+		else
+			printf "%d:%02d", m, sec
+	}'
+}
+
+case $BLOCK_BUTTON in
+	1|2) playerctl play-pause >/dev/null 2>&1 && sigstatus ;;
+	3) notify-send "🎵 Media module" "Left/middle click: play/pause
+Scroll up: previous
+Scroll down: next" ;;
+	4) run_scrolled previous ;;
+	5) run_scrolled next ;;
+	6) setsid -f "$TERMINAL" -e "$EDITOR" "$0" ;;
+esac
+
+status="$(playerctl status 2>/dev/null)" || show_cached
+[ "$status" = "Stopped" ] && show_cached
+
+artist="$(playerctl metadata --format '{{artist}}' 2>/dev/null | tr '\n' ' ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+title="$(playerctl metadata --format '{{title}}' 2>/dev/null | tr '\n' ' ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+length="$(playerctl metadata --format '{{mpris:length}}' 2>/dev/null)"
+position="$(playerctl position 2>/dev/null)"
+
+case $status in
+	Playing) icon="▶" ;;
+	Paused) icon="⏸" ;;
+	*) icon="⏹" ;;
+esac
+
+if [ -n "$artist" ] && [ -n "$title" ]; then
+	track="$artist - $title"
+else
+	track="$artist$title"
+fi
+
+[ -z "$track" ] && track="$(playerctl metadata --format '{{playerName}}' 2>/dev/null)"
+[ -z "$track" ] && show_cached
+
+track="$(printf '%s' "$track" | awk -v max="${MEDIA_MAXLEN:-55}" '{
+	if (length($0) > max)
+		printf "%s...", substr($0, 1, max - 3)
+	else
+		printf "%s", $0
+}')"
+
+elapsed="$(fmt_time "$position")"
+if [ -n "$length" ] && [ "$length" -gt 0 ] 2>/dev/null; then
+	total="$(fmt_time "$(awk -v us="$length" 'BEGIN { print us / 1000000 }')")"
+	output="$(printf "🎵 %s %s %s/%s" "$icon" "$track" "$elapsed" "$total")"
+else
+	output="$(printf "🎵 %s %s %s" "$icon" "$track" "$elapsed")"
+fi
+
+write_cache "$output"
+printf '%s\n' "$output"

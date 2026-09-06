@@ -1,0 +1,229 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cache_dir="${XDG_RUNTIME_DIR:-/tmp}/statusbar-${USER}"
+lock_file="$cache_dir/sysstat.lock"
+cpu_prev_file="$cache_dir/cpu.prev"
+cpu_env_file="$cache_dir/cpu.env"
+gpu_env_file="$cache_dir/gpu.env"
+cpu_ttl=2
+gpu_ttl=2
+history_len="${SB_HISTORY_LEN:-24}"
+
+mkdir -p "$cache_dir"
+
+level_char() {
+	local pct="${1:-0}"
+	local level=$((pct / 13))
+
+	case "$level" in
+		0) printf '▁' ;;
+		1) printf '▂' ;;
+		2) printf '▃' ;;
+		3) printf '▄' ;;
+		4) printf '▅' ;;
+		5) printf '▆' ;;
+		6) printf '▇' ;;
+		*) printf '█' ;;
+	esac
+}
+
+repeat_char() {
+	local char="$1"
+	local count="$2"
+	local out=""
+
+	while (( count > 0 )); do
+		out+="$char"
+		count=$((count - 1))
+	done
+
+	printf '%s' "$out"
+}
+
+read_cpu_temp_c() {
+	local hwmon
+	local input
+
+	for hwmon in /sys/class/hwmon/hwmon*; do
+		[[ -r "$hwmon/name" ]] || continue
+		if [[ "$(cat "$hwmon/name")" == "k10temp" ]]; then
+			input="$hwmon/temp1_input"
+			[[ -r "$input" ]] || break
+			awk -v milli="$(cat "$input")" 'BEGIN { printf "%d", (milli / 1000) + 0.5 }'
+			return 0
+		fi
+	done
+
+	printf '0'
+}
+
+is_stale() {
+	local file="$1"
+	local ttl="$2"
+	local now
+	local mtime
+
+	now=$(date +%s)
+	if [[ ! -f "$file" ]]; then
+		return 0
+	fi
+
+	mtime=$(stat -c %Y "$file" 2>/dev/null || printf '0')
+	(( mtime > now || now - mtime >= ttl ))
+}
+
+update_cpu() {
+	local current_stats
+	local current_total=0
+	local current_idle=0
+	local total_percent=0
+	local prev_history=""
+	local history=""
+	local per_core_bars=""
+	local cpu_temp_c=0
+
+	mapfile -t current_stats < <(
+		awk '/^cpu([[:space:]]|[0-9]+)/ { print $1, ($2+$3+$4+$5+$6+$7+$8), $5 }' /proc/stat
+	)
+
+	[[ "${#current_stats[@]}" -gt 0 ]] || return 0
+
+	if [[ -f "$cpu_env_file" ]]; then
+		# shellcheck disable=SC1090
+		source "$cpu_env_file"
+		prev_history="${history:-}"
+		history=""
+		per_core_bars=""
+	fi
+
+	read -r _ current_total current_idle <<< "${current_stats[0]}"
+
+	if [[ -f "$cpu_prev_file" ]]; then
+		mapfile -t previous_stats < "$cpu_prev_file"
+		if [[ "${#previous_stats[@]}" -eq "${#current_stats[@]}" ]]; then
+			local prev_total prev_idle total_delta idle_delta
+			local prev_name curr_name curr_core_total curr_core_idle prev_core_total prev_core_idle
+			local core_percent
+
+			read -r _ prev_total prev_idle <<< "${previous_stats[0]}"
+			total_delta=$((current_total - prev_total))
+			idle_delta=$((current_idle - prev_idle))
+			if (( total_delta > 0 )); then
+				total_percent=$(((100 * (total_delta - idle_delta)) / total_delta))
+			fi
+
+			for i in "${!current_stats[@]}"; do
+				(( i == 0 )) && continue
+				read -r curr_name curr_core_total curr_core_idle <<< "${current_stats[i]}"
+				read -r prev_name prev_core_total prev_core_idle <<< "${previous_stats[i]}"
+				if [[ "$curr_name" != "$prev_name" ]]; then
+					continue
+				fi
+				total_delta=$((curr_core_total - prev_core_total))
+				idle_delta=$((curr_core_idle - prev_core_idle))
+				core_percent=0
+				if (( total_delta > 0 )); then
+					core_percent=$(((100 * (total_delta - idle_delta)) / total_delta))
+				fi
+				per_core_bars+=$(level_char "$core_percent")
+			done
+		fi
+	fi
+
+	if [[ -z "$per_core_bars" ]]; then
+		for _ in "${current_stats[@]:1}"; do
+			per_core_bars+=$(level_char 0)
+		done
+	fi
+
+	history="${prev_history}$(level_char "$total_percent")"
+	cpu_temp_c="$(read_cpu_temp_c)"
+	if (( ${#history} > history_len )); then
+		history="${history: -history_len}"
+	fi
+	if (( ${#history} < history_len )); then
+		history="$(repeat_char "$(level_char 0)" $((history_len - ${#history})))${history}"
+	fi
+
+	printf '%s\n' "${current_stats[@]}" > "$cpu_prev_file"
+	{
+		printf 'history=%q\n' "$history"
+		printf 'per_core_bars=%q\n' "$per_core_bars"
+		printf 'total_percent=%q\n' "$total_percent"
+		printf 'cpu_temp_c=%q\n' "$cpu_temp_c"
+	} > "$cpu_env_file"
+}
+
+update_gpu() {
+	local line
+	local gpu_percent=0
+	local gpu_mem_percent=0
+	local gpu_mem_used_mib=0
+	local gpu_mem_total_mib=0
+	local gpu_temp_c=0
+	local gpu_available=0
+	local prev_gpu_history=""
+	local gpu_history=""
+
+	if [[ -f "$gpu_env_file" ]]; then
+		# shellcheck disable=SC1090
+		source "$gpu_env_file"
+		prev_gpu_history="${gpu_history:-}"
+		gpu_history=""
+	fi
+
+	if line=$(nvidia-smi \
+		--query-gpu=utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu \
+		--format=csv,noheader,nounits 2>/dev/null | head -n 1); then
+		if [[ -n "${line// }" ]]; then
+			IFS=',' read -r gpu_percent gpu_mem_percent gpu_mem_used_mib gpu_mem_total_mib gpu_temp_c <<< "$line"
+			gpu_percent="${gpu_percent//[[:space:]]/}"
+			gpu_mem_percent="${gpu_mem_percent//[[:space:]]/}"
+			gpu_mem_used_mib="${gpu_mem_used_mib//[[:space:]]/}"
+			gpu_mem_total_mib="${gpu_mem_total_mib//[[:space:]]/}"
+			gpu_temp_c="${gpu_temp_c//[[:space:]]/}"
+			gpu_available=1
+		fi
+	fi
+
+	gpu_history="${prev_gpu_history}$(level_char "$gpu_percent")"
+	if (( ${#gpu_history} > history_len )); then
+		gpu_history="${gpu_history: -history_len}"
+	fi
+	if (( ${#gpu_history} < history_len )); then
+		gpu_history="$(repeat_char "$(level_char 0)" $((history_len - ${#gpu_history})))${gpu_history}"
+	fi
+
+	{
+		printf 'gpu_available=%q\n' "$gpu_available"
+		printf 'gpu_percent=%q\n' "$gpu_percent"
+		printf 'gpu_mem_percent=%q\n' "$gpu_mem_percent"
+		printf 'gpu_mem_used_mib=%q\n' "$gpu_mem_used_mib"
+		printf 'gpu_mem_total_mib=%q\n' "$gpu_mem_total_mib"
+		printf 'gpu_temp_c=%q\n' "$gpu_temp_c"
+		printf 'gpu_history=%q\n' "$gpu_history"
+	} > "$gpu_env_file"
+}
+
+target="${1:-all}"
+
+exec 9>"$lock_file"
+flock -w 1 9 || exit 0
+
+case "$target" in
+	cpu)
+		is_stale "$cpu_env_file" "$cpu_ttl" && update_cpu
+		;;
+	gpu)
+		is_stale "$gpu_env_file" "$gpu_ttl" && update_gpu
+		;;
+	all)
+		is_stale "$cpu_env_file" "$cpu_ttl" && update_cpu
+		is_stale "$gpu_env_file" "$gpu_ttl" && update_gpu
+		;;
+	*)
+		printf 'unknown target: %s\n' "$target" >&2
+		exit 1
+		;;
+esac

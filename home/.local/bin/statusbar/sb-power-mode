@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mode_script="${HOME}/.local/bin/power-mode"
+
+case "${BLOCK_BUTTON:-0}" in
+	1) "$mode_script" toggle; exit 0 ;;
+	2) "$mode_script" blank; exit 0 ;;
+	3) notify-send "Power mode" "$("$mode_script" status-long)" || true; exit 0 ;;
+	4) "$mode_script" gaming; exit 0 ;;
+	5) "$mode_script" eco; exit 0 ;;
+	6) setsid -f "${TERMINAL:-st}" -e "${EDITOR:-nvim}" "$mode_script"; exit 0 ;;
+esac
+
+"$mode_script" status

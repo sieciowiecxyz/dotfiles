@@ -1,0 +1,58 @@
+#!/bin/sh
+
+# Toggle a user-visible systemd sleep/idle inhibitor.
+
+runtime_dir="${XDG_RUNTIME_DIR:-/tmp}/dwm"
+pid_file="$runtime_dir/caffeine.pid"
+mkdir -p "$runtime_dir"
+
+refresh_status() {
+	pkill -RTMIN+13 "${STATUSBAR:-dwmblocks}" 2>/dev/null || true
+}
+
+active_pid() {
+	[ -s "$pid_file" ] || return 1
+	pid="$(cat "$pid_file" 2>/dev/null || true)"
+	[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && {
+		printf '%s\n' "$pid"
+		return 0
+	}
+	rm -f "$pid_file"
+	return 1
+}
+
+case "${1:-toggle}" in
+	status)
+		if active_pid >/dev/null; then
+			printf '☕on\n'
+		else
+			printf '💤auto\n'
+		fi
+		;;
+	on)
+		active_pid >/dev/null && exit 0
+		systemd-inhibit --what=idle:sleep --why="dwm caffeine toggle" --mode=block sleep infinity &
+		printf '%s\n' "$!" > "$pid_file"
+		notify-send "Caffeine" "Sleep/idle suspend inhibited"
+		refresh_status
+		;;
+	off)
+		if pid="$(active_pid)"; then
+			kill "$pid" 2>/dev/null || true
+			rm -f "$pid_file"
+		fi
+		notify-send "Caffeine" "Automatic sleep enabled"
+		refresh_status
+		;;
+	toggle)
+		if active_pid >/dev/null; then
+			"$0" off
+		else
+			"$0" on
+		fi
+		;;
+	*)
+		printf 'usage: caffeine-toggle [toggle|on|off|status]\n' >&2
+		exit 2
+		;;
+esac

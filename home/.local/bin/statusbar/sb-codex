@@ -1,0 +1,10 @@
+#!/bin/sh
+
+case "$BLOCK_BUTTON" in
+	1|2|3) codex-accounts list --refresh >/dev/null 2>&1
+		pkill -RTMIN+28 "${STATUSBAR:-dwmblocks}" ;;
+	6) setsid -f "$TERMINAL" -e "$EDITOR" "$0" ;;
+esac
+
+set -- $(codex-accounts list 2>/dev/null | awk '$1 == "Total" && $2 == "left:" {print $4, $7}')
+printf '5h: %s 7d: %s\n' "${1:-?}" "${2:-?}"

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cache_dir="${XDG_RUNTIME_DIR:-/tmp}/statusbar-${USER}"
+cpu_env_file="$cache_dir/cpu.env"
+cache_script="${HOME}/.local/bin/statusbar/sb-sysstat-cache"
+
+case "${BLOCK_BUTTON:-0}" in
+	1)
+		notify-send "CPU Top" "$(ps -eo comm=,%cpu= --sort=-%cpu | head -n 8 | awk '{printf "%-18s %5s%%\n", $1, $2}')"
+		exit 0
+		;;
+	2)
+		if command -v btop >/dev/null 2>&1; then
+			setsid -f "$TERMINAL" -e btop
+		else
+			setsid -f "$TERMINAL" -e htop
+		fi
+		exit 0
+		;;
+	3)
+		notify-send "CPU Cores" "One bar per logical core. Left click shows top CPU hogs."
+		exit 0
+		;;
+	6)
+		setsid -f "$TERMINAL" -e "$EDITOR" "$0"
+		exit 0
+		;;
+esac
+
+"$cache_script" cpu >/dev/null 2>&1 || true
+[[ -f "$cpu_env_file" ]] || exit 0
+
+# shellcheck disable=SC1090
+source "$cpu_env_file"
+printf '▥%s\n' "${per_core_bars:-}"

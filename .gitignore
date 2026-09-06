@@ -8,6 +8,12 @@
 **/secrets*
 
 # Build products
+suckless/*/st
+suckless/*/dwm
+suckless/*/dmenu
+suckless/*/dwmblocks
+suckless/*/stest
+suckless/*/xidle-ms
 **/*.o
 home/.local/src/*/st
 home/.local/src/*/dwm

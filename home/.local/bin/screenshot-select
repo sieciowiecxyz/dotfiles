@@ -1,0 +1,15 @@
+#!/bin/sh
+
+# Select a region with slop (via maim) and put the PNG on the X clipboard.
+# A temporary file makes failures/cancellations explicit and avoids handing
+# partially written image data to xclip.
+set -eu
+
+tmp_file="$(mktemp "${TMPDIR:-/tmp}/screenshot-select.XXXXXX.png")"
+cleanup() {
+	rm -f "$tmp_file"
+}
+trap cleanup EXIT INT TERM
+
+maim --quiet --hidecursor --select "$tmp_file"
+xclip -selection clipboard -target image/png -in < "$tmp_file"

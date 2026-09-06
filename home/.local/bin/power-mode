@@ -1,0 +1,568 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/power-mode"
+mode_file="$state_dir/mode"
+guardian_pid_file="$state_dir/guardian.pid"
+game_roots_file="$state_dir/game_roots"
+mkdir -p "$state_dir"
+
+root_port="${POWER_MODE_ROOT_PORT:-00:01.1}"
+gpu_func="${POWER_MODE_GPU_FUNC:-01:00.0}"
+gpu_audio_func="${POWER_MODE_GPU_AUDIO_FUNC:-01:00.1}"
+display_output="${POWER_MODE_OUTPUT:-${POWER_MODE_NVIDIA_OUTPUT:-auto}}"
+display_mode="${POWER_MODE_MODE:-${POWER_MODE_NVIDIA_MODE:-3840x2160}}"
+display_rate="${POWER_MODE_RATE:-${POWER_MODE_NVIDIA_RATE:-144.00}}"
+signal="${POWER_MODE_SIGNAL:-20}"
+
+quiet=0
+if [[ "${*: -1}" == "--quiet" ]]; then
+	quiet=1
+	set -- "${@:1:$(($# - 1))}"
+fi
+
+cmd="${1:-status}"
+shift || true
+
+notify() {
+	(( quiet == 1 )) && return 0
+	command -v notify-send >/dev/null 2>&1 && notify-send "Power mode" "$*" || true
+}
+
+refresh_bar() {
+	pkill -RTMIN+"$signal" dwmblocks 2>/dev/null || true
+	pkill -RTMIN+19 dwmblocks 2>/dev/null || true
+}
+
+need_sudo() {
+	if ! sudo -n true 2>/dev/null; then
+		notify "Brak passwordless sudo dla power-mode"
+		exit 1
+	fi
+}
+
+current_mode() {
+	if [[ -s "$mode_file" ]]; then
+		cat "$mode_file"
+	else
+		printf 'eco\n'
+	fi
+}
+
+all_cores() {
+	cat /sys/devices/system/cpu/online
+}
+
+active_output() {
+	if [[ "$display_output" != "auto" ]]; then
+		printf '%s\n' "$display_output"
+		return 0
+	fi
+	if [[ -n "${DISPLAY:-}" ]]; then
+		xrandr --current 2>/dev/null |
+			awk '/ connected primary/ { print $1; found=1; exit }
+			     / connected/ && !fallback { fallback=$1 }
+			     END { if (!found && fallback) print fallback }'
+	fi
+}
+
+best_rate_for_mode() {
+	local output="$1" mode="$2"
+	xrandr --current 2>/dev/null |
+		awk -v out="$output" -v mode="$mode" '
+			$1 == out { in_output = 1; next }
+			in_output && $0 !~ /^[[:space:]]/ { exit }
+			in_output && $1 == mode {
+				for (i = 2; i <= NF; i++) {
+					rate = $i
+					gsub(/[*+]/, "", rate)
+					if ((rate + 0) > max) max = rate + 0
+				}
+			}
+			END { if (max > 0) printf "%.2f\n", max }
+		'
+}
+
+set_output_mode() {
+	local output="$1" mode="$2" rate="$3" fallback
+	if xrandr --output "$output" --mode "$mode" --rate "$rate" --primary >/dev/null 2>&1; then
+		return 0
+	fi
+	fallback="$(best_rate_for_mode "$output" "$mode")"
+	if [[ -n "$fallback" ]]; then
+		xrandr --output "$output" --mode "$mode" --rate "$fallback" --primary >/dev/null 2>&1 || true
+	else
+		xrandr --output "$output" --auto --primary >/dev/null 2>&1 || true
+	fi
+}
+
+l3_groups() {
+	local seen="" cpu id size shared size_k
+	for d in /sys/devices/system/cpu/cpu[0-9]*; do
+		cpu="${d##*cpu}"
+		[[ -f "$d/cache/index3/id" ]] || continue
+		id="$(<"$d/cache/index3/id")"
+		[[ " $seen " == *" $id "* ]] && continue
+		seen="$seen $id"
+		size="$(<"$d/cache/index3/size")"
+		shared="$(<"$d/cache/index3/shared_cpu_list")"
+		size_k="${size%K}"
+		printf '%s %s\n' "$size_k" "$shared"
+	done | sort -nr
+}
+
+vcache_cores() {
+	l3_groups | awk 'NR == 1 { print $2; exit }'
+}
+
+non_vcache_cores() {
+	local second
+	second="$(l3_groups | awk 'NR == 2 { print $2; exit }')"
+	if [[ -n "$second" ]]; then
+		printf '%s\n' "$second"
+	else
+		all_cores
+	fi
+}
+
+steam_launch_option() {
+	printf 'power-mode game-run %%command%%\n'
+}
+
+set_cpu_epp() {
+	local governor="$1" epp="$2" boost="$3"
+	sudo sh -c "
+		for f in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+			echo '$governor' > \"\$f\" 2>/dev/null || echo powersave > \"\$f\" 2>/dev/null || true
+		done
+		for f in /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference; do
+			echo '$epp' > \"\$f\" 2>/dev/null || true
+		done
+		[ -w /sys/devices/system/cpu/cpufreq/boost ] && echo '$boost' > /sys/devices/system/cpu/cpufreq/boost || true
+	"
+}
+
+set_systemd_cpus() {
+	local cpus="${1:-}"
+	if [[ -n "$cpus" ]]; then
+		sudo systemctl set-property --runtime -- system.slice "AllowedCPUs=$cpus" >/dev/null 2>&1 || true
+		sudo systemctl set-property --runtime -- init.scope "AllowedCPUs=$cpus" >/dev/null 2>&1 || true
+	else
+		sudo systemctl set-property --runtime -- system.slice "AllowedCPUs=" >/dev/null 2>&1 || true
+		sudo systemctl set-property --runtime -- init.scope "AllowedCPUs=" >/dev/null 2>&1 || true
+	fi
+}
+
+set_irq_cpus() {
+	local cpus="$1"
+	sudo sh -c "
+		for f in /proc/irq/*/smp_affinity_list; do
+			[ -w \"\$f\" ] && echo '$cpus' > \"\$f\" 2>/dev/null || true
+		done
+	"
+}
+
+move_background_to() {
+	local cpus="$1"
+	local patterns='Xorg|dwm$|dwmblocks|brave|firefox|chromium|nextcloud|pipewire|wireplumber|discord|slack|spotify|steam|steamwebhelper'
+	pgrep -u "$USER" -f "$patterns" 2>/dev/null |
+		while read -r pid; do
+			[[ "$pid" == "$$" ]] && continue
+			taskset -apc "$cpus" "$pid" >/dev/null 2>&1 || true
+		done
+}
+
+restore_user_affinity() {
+	local cpus
+	cpus="$(all_cores)"
+	for p in $(pgrep -u "$USER" 2>/dev/null || true); do
+		[[ -e "/proc/$p/status" ]] || continue
+		taskset -apc "$cpus" "$p" >/dev/null 2>&1 || true
+	done
+}
+
+descendants_of() {
+	local queue="$*" out="" next p kids
+	while [[ -n "$queue" ]]; do
+		next=""
+		for p in $queue; do
+			kids="$(pgrep -P "$p" 2>/dev/null || true)"
+			[[ -n "$kids" ]] || continue
+			out="$out $kids"
+			next="$next $kids"
+		done
+		queue="$next"
+	done
+	printf '%s\n' "$out"
+}
+
+gaming_guardian_loop() {
+	local nonvcache vcache root exclude game_pids p tmp
+	trap 'rm -f "$guardian_pid_file"' EXIT
+	while [[ "$(current_mode)" == "gaming" ]]; do
+		nonvcache="$(non_vcache_cores)"
+		vcache="$(vcache_cores)"
+		exclude=" $$ "
+		game_pids=""
+		tmp="$(mktemp)"
+		if [[ -f "$game_roots_file" ]]; then
+			while read -r root; do
+				[[ -n "$root" ]] || continue
+				if kill -0 "$root" 2>/dev/null; then
+					printf '%s\n' "$root" >> "$tmp"
+					game_pids="$game_pids $root $(descendants_of "$root")"
+				fi
+			done < "$game_roots_file"
+			mv "$tmp" "$game_roots_file"
+		else
+			rm -f "$tmp"
+		fi
+		exclude=" $$ "
+		for p in $game_pids; do
+			[[ -e "/proc/$p/status" ]] || continue
+			taskset -apc "$vcache" "$p" >/dev/null 2>&1 || true
+			exclude="$exclude $p "
+		done
+		for p in $(pgrep -u "$USER" 2>/dev/null || true); do
+			[[ " $exclude " == *" $p "* ]] && continue
+			taskset -apc "$nonvcache" "$p" >/dev/null 2>&1 || true
+		done
+		sleep 1
+	done
+}
+
+start_gaming_guardian() {
+	if [[ -s "$guardian_pid_file" ]] && kill -0 "$(<"$guardian_pid_file")" 2>/dev/null; then
+		return 0
+	fi
+	nohup "$0" guardian >/tmp/power-mode-guardian.log 2>&1 &
+	echo $! > "$guardian_pid_file"
+}
+
+stop_gaming_guardian() {
+	if [[ -s "$guardian_pid_file" ]]; then
+		kill "$(<"$guardian_pid_file")" >/dev/null 2>&1 || true
+	fi
+	rm -f "$guardian_pid_file"
+}
+
+stop_idle_services() {
+	# Bluetooth is deliberately left alone: this profile must not disconnect
+	# wireless keyboards, mice, headsets, or block future Bluetooth use.
+	sudo systemctl stop docker.service docker.socket containerd.service incus.service incus.socket lxcfs.service nvidia-persistenced.service >/dev/null 2>&1 || true
+	pkill -TERM -x nextcloud >/dev/null 2>&1 || true
+}
+
+unmask_bluetooth() {
+	sudo systemctl unmask bluetooth.service bluetooth.target >/dev/null 2>&1 || true
+}
+
+set_aspm_policy() {
+	local policy="$1"
+	sudo sh -c "echo '$policy' > /sys/module/pcie_aspm/parameters/policy" >/dev/null 2>&1 || true
+}
+
+set_aspm_l1() {
+	local value="$1"
+	local byte="00"
+	[[ "$value" == "on" ]] && byte="02"
+	for dev in "$root_port" "$gpu_func" "$gpu_audio_func"; do
+		sudo setpci -s "$dev" CAP_EXP+10.B="$byte":03 >/dev/null 2>&1 || true
+	done
+}
+
+set_pcie_speed() {
+	local speed="$1"
+	sudo sh -c "
+		root='$root_port'
+		gpu='$gpu_func'
+		orig_root=\$(setpci -s \$root CAP_EXP+30.w)
+		orig_gpu=\$(setpci -s \$gpu CAP_EXP+30.w)
+		orig_lctl=\$(setpci -s \$root CAP_EXP+10.w)
+		setpci -s \$root CAP_EXP+30.w=\$(printf '%04x' \$(( (0x\$orig_root & 0xfff0) | $speed )))
+		setpci -s \$gpu CAP_EXP+30.w=\$(printf '%04x' \$(( (0x\$orig_gpu & 0xfff0) | $speed )))
+		setpci -s \$root CAP_EXP+10.w=\$(printf '%04x' \$(( 0x\$orig_lctl | 0x20 )))
+	" >/dev/null 2>&1 || true
+}
+
+ensure_nvidia_stack() {
+	sudo modprobe nvidia >/dev/null 2>&1 || true
+	sudo modprobe nvidia_modeset >/dev/null 2>&1 || true
+	sudo modprobe nvidia_uvm >/dev/null 2>&1 || true
+	sudo modprobe nvidia_drm >/dev/null 2>&1 || true
+}
+
+nvidia_common() {
+	ensure_nvidia_stack
+	nvidia-smi -rgc >/dev/null 2>&1 || true
+	sudo -n nvidia-smi -pl "${1:-250}" >/dev/null 2>&1 || true
+	for d in 0000:01:00.0 0000:01:00.1; do
+		[[ -e "/sys/bus/pci/devices/$d/power/control" ]] && echo auto | sudo tee "/sys/bus/pci/devices/$d/power/control" >/dev/null || true
+	done
+}
+
+unbind_nvidia_audio() {
+	if [[ -e /sys/bus/pci/devices/0000:01:00.1/driver ]]; then
+		echo 0000:01:00.1 | sudo tee /sys/bus/pci/drivers/snd_hda_intel/unbind >/dev/null 2>&1 || true
+	fi
+}
+
+bind_nvidia_audio() {
+	[[ -e /sys/bus/pci/devices/0000:01:00.1/driver ]] && return 0
+	sudo modprobe snd_hda_intel >/dev/null 2>&1 || true
+	echo 0000:01:00.1 | sudo tee /sys/bus/pci/drivers/snd_hda_intel/bind >/dev/null 2>&1 || true
+}
+
+set_mystic_auto() {
+	for dev in /sys/bus/usb/devices/*; do
+		[[ -f "$dev/idVendor" && -f "$dev/idProduct" ]] || continue
+		[[ "$(<"$dev/idVendor")" == "0db0" && "$(<"$dev/idProduct")" == "0076" ]] || continue
+		[[ -e "$dev/power/control" ]] && echo auto | sudo tee "$dev/power/control" >/dev/null || true
+	done
+}
+
+apply_x_display() {
+	local profile="${1:-gaming}"
+	[[ -n "${DISPLAY:-}" ]] || return 0
+	export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+	local output metarate
+	output="$(active_output)"
+	[[ -n "$output" ]] || return 0
+	metarate="${display_rate%.*}"
+	local gsync="On" vrr="1" flipping="1" vblank="1"
+	if [[ "$profile" == "eco" ]]; then
+		gsync="Off"
+		vrr="0"
+		flipping="0"
+		vblank="0"
+	fi
+	xset +dpms >/dev/null 2>&1 || true
+	xset dpms 360 360 360 >/dev/null 2>&1 || true
+	xset s 360 360 >/dev/null 2>&1 || true
+	set_output_mode "$output" "$display_mode" "$display_rate"
+	nvidia-settings --assign '[gpu:0]/GPUPowerMizerMode=0' >/dev/null 2>&1 || true
+	nvidia-settings --assign "AllowVRR=$vrr" >/dev/null 2>&1 || true
+	nvidia-settings --assign "AllowFlipping=$flipping" >/dev/null 2>&1 || true
+	nvidia-settings --assign "SyncToVBlank=$vblank" >/dev/null 2>&1 || true
+	nvidia-settings --assign "CurrentMetaMode=${output}: ${display_mode}_${metarate} +0+0 {AllowGSYNCCompatible=$gsync}" >/dev/null 2>&1 || true
+}
+
+eco_mode() {
+	need_sudo
+	printf 'eco\n' > "$mode_file"
+	stop_gaming_guardian
+	set_systemd_cpus ""
+	set_irq_cpus "$(all_cores)"
+	restore_user_affinity
+	set_cpu_epp powersave power 0
+	stop_idle_services
+	set_aspm_policy powersupersave
+	set_aspm_l1 on
+	set_pcie_speed 1
+	nvidia_common 250
+	nvidia-smi -pm 0 >/dev/null 2>&1 || true
+	unbind_nvidia_audio
+	set_mystic_auto
+	apply_x_display eco
+	refresh_bar
+	notify "♻ eco: CPU power, boost off, services stopped, NVIDIA P8/Gen1, ASPM L1"
+}
+
+perf_mode() {
+	need_sudo
+	printf 'perf\n' > "$mode_file"
+	stop_gaming_guardian
+	set_systemd_cpus ""
+	set_irq_cpus "$(all_cores)"
+	restore_user_affinity
+	set_cpu_epp performance performance 1
+	unmask_bluetooth
+	set_aspm_policy performance
+	set_aspm_l1 off
+	set_pcie_speed 5
+	nvidia_common 350
+	nvidia-smi -pm 1 >/dev/null 2>&1 || true
+	bind_nvidia_audio
+	apply_x_display
+	refresh_bar
+	notify "⚡ perf: all cores, boost on, PCIe Gen5, NVIDIA adaptive"
+}
+
+gaming_mode() {
+	need_sudo
+	local vcache nonvcache
+	vcache="$(vcache_cores)"
+	nonvcache="$(non_vcache_cores)"
+	printf 'gaming\n' > "$mode_file"
+	printf '%s\n' "$vcache" > "$state_dir/vcache_cores"
+	printf '%s\n' "$nonvcache" > "$state_dir/non_vcache_cores"
+	set_systemd_cpus "$nonvcache"
+	set_irq_cpus "$nonvcache"
+	move_background_to "$nonvcache"
+	# Reattach an already-running Deadlock/radar session after perf -> gaming.
+	# Normally game-run records this root; perf must not make a live session
+	# lose ownership of the game cores.
+	if [[ ! -s "$game_roots_file" ]]; then
+		pgrep -u "$USER" -f '/deadlock_reader/scripts/radar -- ' | head -n 1 > "$game_roots_file" || true
+	fi
+	start_gaming_guardian
+	set_cpu_epp performance performance 1
+	unmask_bluetooth
+	systemctl --user start gamemoded.service >/dev/null 2>&1 || true
+	set_aspm_policy performance
+	set_aspm_l1 off
+	set_pcie_speed 5
+	nvidia_common 350
+	nvidia-smi -pm 1 >/dev/null 2>&1 || true
+	bind_nvidia_audio
+	apply_x_display
+	refresh_bar
+	notify "🎮 gaming: game cores $vcache, system/bg on $nonvcache. Steam: $(steam_launch_option)"
+}
+
+blank_display() {
+	if [[ -n "${DISPLAY:-}" ]]; then
+		mkdir -p "$state_dir"
+		if [[ -s "$state_dir/blank.pid" ]] && kill -0 "$(<"$state_dir/blank.pid")" 2>/dev/null; then
+			return 0
+		fi
+		("$0" blank-session >/tmp/power-mode-blank.log 2>&1 & echo $! > "$state_dir/blank.pid")
+	else
+		echo 4 | sudo tee /sys/class/graphics/fb0/blank >/dev/null 2>&1 || true
+	fi
+}
+
+unblank_display() {
+	if [[ -n "${DISPLAY:-}" ]]; then
+		export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+		local output
+		output="$(active_output)"
+		[[ -n "$output" ]] && set_output_mode "$output" "$display_mode" "$display_rate"
+		apply_x_display "$(current_mode)"
+		if [[ -s "$state_dir/blank.pid" ]]; then
+			kill "$(<"$state_dir/blank.pid")" >/dev/null 2>&1 || true
+			rm -f "$state_dir/blank.pid"
+		fi
+	else
+		echo 0 | sudo tee /sys/class/graphics/fb0/blank >/dev/null 2>&1 || true
+	fi
+}
+
+wait_for_input_event() {
+	local max_seconds="$1"
+	local devices=()
+	local dev
+	for dev in /dev/input/by-id/*event-kbd /dev/input/by-id/*event-mouse; do
+		[[ -e "$dev" ]] && devices+=("$dev")
+	done
+
+	if ((${#devices[@]} > 0)) && sudo -n true 2>/dev/null; then
+		sudo timeout "$max_seconds" bash -c '
+			pids=""
+			for dev in "$@"; do
+				dd if="$dev" of=/dev/null bs=24 count=1 status=none 2>/dev/null &
+				pids="$pids $!"
+			done
+			wait -n
+			kill $pids >/dev/null 2>&1 || true
+		' bash "${devices[@]}" >/dev/null 2>&1 || true
+		return 0
+	fi
+
+	local waited=0 idle_ms
+	while (( waited < max_seconds )); do
+		idle_ms="$(xidle-ms 2>/dev/null || printf '999999999')"
+		(( idle_ms < 2000 )) && break
+		sleep 1
+		((waited++))
+	done
+}
+
+blank_session() {
+	[[ -n "${DISPLAY:-}" ]] || exit 0
+	export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+	local max_seconds="${POWER_MODE_BLANK_MAX_SECONDS:-3600}"
+	local output
+	output="$(active_output)"
+	[[ -n "$output" ]] || exit 0
+	trap 'rm -f "$state_dir/blank.pid"' EXIT
+	xrandr --output "$output" --off >/dev/null 2>&1 || exit 0
+	refresh_bar
+	sleep 2
+	wait_for_input_event "$max_seconds"
+	set_output_mode "$output" "$display_mode" "$display_rate"
+	apply_x_display "$(current_mode)"
+	refresh_bar
+}
+
+status_text() {
+	case "$(current_mode)" in
+		eco) printf '♻ eco\n' ;;
+		perf) printf '⚡ perf\n' ;;
+		gaming) printf '🎮 game\n' ;;
+		*) printf '? mode\n' ;;
+	esac
+}
+
+status_long() {
+	local mode vcache nonvcache gpu link boost epp policy
+	mode="$(current_mode)"
+	vcache="$(vcache_cores 2>/dev/null || true)"
+	nonvcache="$(non_vcache_cores 2>/dev/null || true)"
+	gpu="$(nvidia-smi --query-gpu=pstate,power.draw,clocks.gr,clocks.mem,pcie.link.gen.current,display_active --format=csv,noheader,nounits 2>/dev/null || true)"
+	link="$(sudo lspci -s "$root_port" -vv 2>/dev/null | awk '/LnkCtl:|LnkSta:/{gsub(/^[ \t]+/, ""); print}' | paste -sd ' ' -)"
+	boost="$(cat /sys/devices/system/cpu/cpufreq/boost 2>/dev/null || true)"
+	epp="$(cat /sys/devices/system/cpu/cpu0/cpufreq/energy_performance_preference 2>/dev/null || true)"
+	policy="$(cat /sys/module/pcie_aspm/parameters/policy 2>/dev/null || true)"
+	printf 'mode: %s\nX3D/game cores: %s\nnon-X3D/system cores: %s\nboost: %s, epp: %s\nASPM policy: %s\nGPU: %s\nPCIe: %s\nSteam launch: %s\n' \
+		"$mode" "$vcache" "$nonvcache" "$boost" "$epp" "$policy" "${gpu:-n/a}" "${link:-n/a}" "$(steam_launch_option)"
+}
+
+case "$cmd" in
+	eco|low|low-power) eco_mode ;;
+	perf|performance|high) perf_mode ;;
+	gaming|game) gaming_mode ;;
+	apply-current) "$(current_mode)_mode" ;;
+	toggle)
+		case "$(current_mode)" in
+			eco) perf_mode ;;
+			perf) gaming_mode ;;
+			*) eco_mode ;;
+		esac
+		;;
+	status) status_text ;;
+	status-long) status_long ;;
+	blank) blank_display ;;
+	blank-session) blank_session ;;
+	guardian) gaming_guardian_loop ;;
+	unblank) unblank_display ;;
+	steam-option) steam_launch_option ;;
+	game-run)
+		vcache="$(vcache_cores)"
+		if (($# == 0)); then
+			steam_launch_option
+			exit 0
+		fi
+		# A game launch owns the gaming session: isolate the background first,
+		# then restore the machine automatically when the command exits.
+		gaming_mode
+		mkdir -p "$state_dir"
+		printf '%s\n' "$$" >> "$game_roots_file"
+		cleanup_game_session() {
+			local status=$?
+			trap - EXIT
+			eco_mode
+			exit "$status"
+		}
+		trap cleanup_game_session EXIT
+		if command -v gamemoderun >/dev/null 2>&1; then
+			gamemoderun taskset -c "$vcache" "$@"
+		else
+			taskset -c "$vcache" "$@"
+		fi
+		;;
+	*)
+		printf 'usage: power-mode eco|perf|gaming|toggle|status|status-long|blank|unblank|steam-option|game-run [cmd]\n' >&2
+		exit 2
+		;;
+esac

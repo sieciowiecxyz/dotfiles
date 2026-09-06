@@ -1,0 +1,32 @@
+#!/bin/sh
+
+# Shows and toggles the OS-level microphone kill switch state.
+
+sources() {
+	pactl list short sources | awk '$2 !~ /\.monitor$/ { print $1 }'
+}
+
+mic_state() {
+	ids="$(sources)"
+	[ -n "$ids" ] || {
+		printf '🎙none\n'
+		return
+	}
+
+	for id in $ids; do
+		if ! pactl get-source-mute "$id" 2>/dev/null | grep -q 'yes$'; then
+			printf '🎙on\n'
+			return
+		fi
+	done
+
+	printf '🎙mute\n'
+}
+
+case $BLOCK_BUTTON in
+	1|2) mic-kill-switch ;;
+	3) notify-send "🎙 Microphone module" "Left/middle click: toggle OS-level microphone kill switch" ;;
+	6) setsid -f "$TERMINAL" -e "$EDITOR" "$0" ;;
+esac
+
+mic_state

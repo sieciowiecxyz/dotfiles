@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cache_dir="${XDG_RUNTIME_DIR:-/tmp}/statusbar-${USER}"
+cpu_env_file="$cache_dir/cpu.env"
+cache_script="${HOME}/.local/bin/statusbar/sb-sysstat-cache"
+
+cpu_hogs() {
+	ps -eo pid=,comm=,%cpu= --sort=-%cpu |
+		awk '
+			BEGIN { n = 0 }
+			$3 > 0 {
+				printf "%-7s %-22s %5s%%\n", $1, $2, $3
+				if (++n >= 5) exit
+			}
+		'
+}
+
+case "${BLOCK_BUTTON:-0}" in
+	1)
+		"$cache_script" cpu >/dev/null 2>&1 || true
+		hogs="$(cpu_hogs)"
+		notify-send "CPU hogs" "${hogs:-Brak aktywnych hogów}"
+		exit 0
+		;;
+	2)
+		if command -v btop >/dev/null 2>&1; then
+			setsid -f "$TERMINAL" -e btop
+		else
+			setsid -f "$TERMINAL" -e htop
+		fi
+		exit 0
+		;;
+	6)
+		setsid -f "$TERMINAL" -e "$EDITOR" "$0"
+		exit 0
+		;;
+esac
+
+"$cache_script" cpu >/dev/null 2>&1 || true
+[[ -f "$cpu_env_file" ]] || exit 0
+
+# shellcheck disable=SC1090
+source "$cpu_env_file"
+printf '🧠%s%% %sC %sG\n' \
+	"${total_percent:-0}" \
+	"${cpu_temp_c:-0}" \
+	"$(free --mebi | awk 'NR==2 {printf "%d", ($3 / 1024) + 0.5}')"

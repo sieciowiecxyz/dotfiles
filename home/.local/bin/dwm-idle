@@ -1,0 +1,91 @@
+#!/bin/sh
+
+# Minimal X11 idle policy for dwm.
+# Defaults: lock/display off after 6 minutes. Autosuspend is opt-in because
+# this NVIDIA/AM5 setup has failed to resume from deep sleep.
+
+runtime_dir="${XDG_RUNTIME_DIR:-/tmp}/dwm"
+lock_dir="$runtime_dir/dwm-idle.lock"
+screen_after="${DWM_IDLE_SCREEN_SECONDS:-${DWM_IDLE_LOCK_SECONDS:-360}}"
+suspend_after="${DWM_IDLE_SUSPEND_SECONDS:-0}"
+poll_after="${DWM_IDLE_POLL_SECONDS:-5}"
+lock_cmd="${DWM_IDLE_LOCK_CMD:-slock}"
+default_screen_off_cmd="xset dpms force off"
+if command -v power-mode >/dev/null 2>&1; then
+	default_screen_off_cmd="power-mode blank"
+fi
+screen_off_cmd="${DWM_IDLE_SCREEN_OFF_CMD:-$default_screen_off_cmd}"
+suspend_cmd="${DWM_IDLE_SUSPEND_CMD:-systemctl suspend}"
+block_procs="${DWM_IDLE_BLOCK_PROCS:-qemu-system}"
+caffeine_pid="$runtime_dir/caffeine.pid"
+
+mkdir -p "$runtime_dir"
+if ! mkdir "$lock_dir" 2>/dev/null; then
+	exit 0
+fi
+cleanup() {
+	rmdir "$lock_dir" 2>/dev/null || true
+}
+trap cleanup EXIT
+trap 'cleanup; exit 0' INT TERM
+
+caffeine_active() {
+	[ -s "$caffeine_pid" ] || return 1
+	pid="$(cat "$caffeine_pid" 2>/dev/null || true)"
+	[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+suspend_blocked_by_process() {
+	for proc in $block_procs; do
+		pgrep -f "$proc" >/dev/null 2>&1 && return 0
+	done
+	return 1
+}
+
+locked=0
+suspended=0
+
+while :; do
+	idle_ms="$(xidle-ms 2>/dev/null)" || {
+		sleep "$poll_after"
+		continue
+	}
+	idle_s=$((idle_ms / 1000))
+
+	# Caffeine means no idle action at all. Resetting the X11 idle timer also
+	# prevents the independent XScreenSaver/DPMS timeout configured in .xinitrc.
+	if caffeine_active; then
+		xset s reset >/dev/null 2>&1 || true
+		locked=0
+		suspended=0
+		sleep "$poll_after"
+		continue
+	fi
+
+	if [ "$idle_s" -lt "$screen_after" ]; then
+		locked=0
+		suspended=0
+		sleep "$poll_after"
+		continue
+	fi
+
+	if [ "$locked" -eq 0 ]; then
+		$lock_cmd &
+		sleep 1
+		$screen_off_cmd >/dev/null 2>&1 || true
+		locked=1
+	fi
+
+	if [ "$suspend_after" -gt 0 ] && [ "$idle_s" -ge "$suspend_after" ] && [ "$suspended" -eq 0 ]; then
+		if ! suspend_blocked_by_process; then
+			if $suspend_cmd; then
+				suspended=1
+			else
+				notify-send "Idle suspend failed" "Command failed: $suspend_cmd" 2>/dev/null || true
+				suspended=1
+			fi
+		fi
+	fi
+
+	sleep "$poll_after"
+done

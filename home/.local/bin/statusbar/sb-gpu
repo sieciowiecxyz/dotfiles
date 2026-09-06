@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cache_dir="${XDG_RUNTIME_DIR:-/tmp}/statusbar-${USER}"
+gpu_env_file="$cache_dir/gpu.env"
+cache_script="${HOME}/.local/bin/statusbar/sb-sysstat-cache"
+
+case "${BLOCK_BUTTON:-0}" in
+	1)
+		"$cache_script" gpu >/dev/null 2>&1 || true
+		if [[ -f "$gpu_env_file" ]]; then
+			# shellcheck disable=SC1090
+			source "$gpu_env_file"
+			notify-send "GPU" "Usage: ${gpu_percent:-0}%\nTemp: ${gpu_temp_c:-0}C\nVRAM ctrl: ${gpu_mem_percent:-0}%"
+		fi
+		exit 0
+		;;
+	2)
+		if command -v nvtop >/dev/null 2>&1; then
+			setsid -f "$TERMINAL" -e nvtop
+		else
+			setsid -f "$TERMINAL" -e nvidia-smi
+		fi
+		exit 0
+		;;
+	3)
+		notify-send "GPU" "Uses shared nvidia-smi cache. Middle click opens nvtop."
+		exit 0
+		;;
+	6)
+		setsid -f "$TERMINAL" -e "$EDITOR" "$0"
+		exit 0
+		;;
+esac
+
+"$cache_script" gpu >/dev/null 2>&1 || true
+[[ -f "$gpu_env_file" ]] || exit 0
+
+# shellcheck disable=SC1090
+source "$gpu_env_file"
+(( ${gpu_available:-0} == 1 )) || exit 0
+printf 'GPU%3s%% | %sC | GPU[%s]\n' "${gpu_percent:-0}" "${gpu_temp_c:-0}" "${gpu_history:-}"

@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cache_dir="${XDG_RUNTIME_DIR:-/tmp}/statusbar-${USER}"
+gpu_env_file="$cache_dir/gpu.env"
+cache_script="${HOME}/.local/bin/statusbar/sb-sysstat-cache"
+
+format_gib_int() {
+	local mib="${1:-0}"
+	printf '%d' $(((mib + 512) / 1024))
+}
+
+read_cached_gpu_status() {
+	local gpu_percent=0
+	local gpu_mem_used_mib=0
+	local gpu_mem_total_mib=0
+	local gpu_temp_c=0
+	local used_gib=0
+
+	"$cache_script" gpu >/dev/null 2>&1 || true
+	[[ -f "$gpu_env_file" ]] || return 1
+
+	# shellcheck disable=SC1090
+	source "$gpu_env_file"
+	(( ${gpu_available:-0} == 1 )) || return 1
+
+	used_gib="$(format_gib_int "${gpu_mem_used_mib:-0}")"
+
+	printf '🎮%s%% %sC %sG\n' \
+		"${gpu_percent:-0}" \
+		"${gpu_temp_c:-0}" \
+		"${used_gib}"
+}
+
+gpu_vram_hogs() {
+	nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader,nounits 2>/dev/null |
+		awk -F', *' '
+			function shorten_proc(proc, limit, parts, n) {
+				gsub(/^ +| +$/, "", proc)
+				n = split(proc, parts, /[\/\\]/)
+				if (n > 0 && parts[n] != "") {
+					proc = parts[n]
+				}
+				if (length(proc) > limit) {
+					proc = substr(proc, 1, limit - 3) "..."
+				}
+				return proc
+			}
+			NF >= 3 {
+				proc = shorten_proc($2, 22)
+				mem = $3 + 0
+				printf "%d\t%5dMiB  %s\n", -mem, mem, proc
+			}
+		' |
+		sort -n |
+		cut -f2- |
+		head -n 5
+}
+
+case "${BLOCK_BUTTON:-0}" in
+	1)
+		"$cache_script" gpu >/dev/null 2>&1 || true
+		hogs="$(gpu_vram_hogs)"
+		notify-send "GPU VRAM hogs" "${hogs:-Brak aktywnych procesów VRAM}"
+		exit 0
+		;;
+	2)
+		if command -v nvtop >/dev/null 2>&1; then
+			setsid -f "$TERMINAL" -e nvtop
+		else
+			setsid -f "$TERMINAL" -e nvidia-smi
+		fi
+		exit 0
+		;;
+	6)
+		setsid -f "$TERMINAL" -e "$EDITOR" "$0"
+		exit 0
+		;;
+esac
+
+read_cached_gpu_status

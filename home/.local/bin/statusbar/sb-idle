@@ -1,0 +1,50 @@
+#!/bin/sh
+
+# Shows next idle action and toggles caffeine.
+
+runtime_dir="${XDG_RUNTIME_DIR:-/tmp}/dwm"
+pid_file="$runtime_dir/caffeine.pid"
+screen_after="${DWM_IDLE_SCREEN_SECONDS:-${DWM_IDLE_LOCK_SECONDS:-360}}"
+suspend_after="${DWM_IDLE_SUSPEND_SECONDS:-0}"
+
+active_caffeine() {
+	[ -s "$pid_file" ] || return 1
+	pid="$(cat "$pid_file" 2>/dev/null || true)"
+	[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+ceil_min() {
+	sec="${1:-0}"
+	[ "$sec" -lt 0 ] && sec=0
+	printf '%dm' $(((sec + 59) / 60))
+}
+
+case $BLOCK_BUTTON in
+	1|2) caffeine-toggle toggle ;;
+	3) notify-send "💤 Idle module" "Left/middle click: toggle caffeine
+☕on: lock, display off and suspend blocked
+🖥Xm: lock + display off ETA
+💤Xm: suspend ETA, only if explicitly enabled" ;;
+	6) setsid -f "$TERMINAL" -e "$EDITOR" "$0" ;;
+esac
+
+if active_caffeine; then
+	printf '☕on\n'
+	exit 0
+fi
+
+idle_ms="$(xidle-ms 2>/dev/null)" || {
+	printf '💤?\n'
+	exit 0
+}
+idle_s=$((idle_ms / 1000))
+
+if [ "$idle_s" -lt "$screen_after" ]; then
+	printf '🖥%s\n' "$(ceil_min $((screen_after - idle_s)))"
+elif [ "$suspend_after" -le 0 ]; then
+	printf '🖥off\n'
+elif [ "$idle_s" -lt "$suspend_after" ]; then
+	printf '💤%s\n' "$(ceil_min $((suspend_after - idle_s)))"
+else
+	printf '💤now\n'
+fi
