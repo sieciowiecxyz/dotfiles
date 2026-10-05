@@ -33,6 +33,7 @@ home/.local/src/*/dmenu_run
 # Private user data
 .bash_history*
 .Xauthority
+/home/.config/shell/local-env.sh
 
 # Large binary assets
 *.jpg

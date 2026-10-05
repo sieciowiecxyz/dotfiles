@@ -34,9 +34,6 @@ systemctl --user start graphical-session.target
 
 gnome-keyring-daemon --start --components=secrets &
 
-(
-    sleep 2
-    power-mode apply-current --quiet >/dev/null 2>&1
-) &
+power-mode apply-current --quiet >/dev/null 2>&1 &
 
 exec dwm

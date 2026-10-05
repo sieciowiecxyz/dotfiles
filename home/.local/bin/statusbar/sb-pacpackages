@@ -1,30 +1,19 @@
 #!/bin/sh
 
-# Displays number of upgradeable packages.
-# For this to work, have a `pacman -Sy` command run in the background as a
-# cronjob every so often as root. This script will then read those packages.
-# When clicked, it will run an upgrade via pacman.
-#
-# Add the following text as a file in /usr/share/libalpm/hooks/statusbar.hook:
-#
-# [Trigger]
-# Operation = Upgrade
-# Type = Package
-# Target = *
-#
-# [Action]
-# Description = Updating statusbar...
-# When = PostTransaction
-# Exec = /usr/bin/pkill -RTMIN+8 dwmblocks # Or i3blocks if using i3.
-
-case $BLOCK_BUTTON in
+# Paru queries repo databases and AUR. Repo freshness follows the normal
+# repository sync (cron/checkup); this read-only query never runs pacman -Sy.
+updates=$(timeout 45 paru -Qu --color never)
+result=$?
+if [ "$result" -ne 0 ]; then
+	printf '📦?\n'
+	exit 0
+fi
+updates=$(printf '%s\n' "$updates" | awk 'NF && !/\[ignored\]/')
+case ${BLOCK_BUTTON:-0} in
 	1) setsid -f "$TERMINAL" -e sb-popupgrade ;;
-	2) notify-send "$(/usr/bin/pacman -Qu)" ;;
-	3) notify-send "🎁 Upgrade module" "📦: number of upgradable packages
-- Left click to upgrade packages
-- Middle click to show upgradable packages" ;;
+	2) notify-send "Available updates (repo + AUR)" "${updates:-No updates}" ;;
+	3) notify-send "🎁 Upgrade module" "Repo + AUR via paru. Left click: upgrade. Middle click: list. Repo databases follow the regular repository sync." ;;
 	6) setsid -f "$TERMINAL" -e "$EDITOR" "$0" ;;
 esac
-
-count="$(pacman -Qu | grep -Fcv "[ignored]")"
-[ "$count" -gt 0 ] && printf '📦%s\n' "$count"
+count=$(printf '%s\n' "$updates" | awk 'NF {n++} END {print n+0}')
+[ "$count" -eq 0 ] || printf '📦%s\n' "$count"

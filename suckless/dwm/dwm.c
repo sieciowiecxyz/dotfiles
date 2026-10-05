@@ -76,7 +76,8 @@ enum {
 	SchemeInfoSel,
 	SchemeInfoNorm,
 	SchemeSticky,
-	SchemeStickySel
+	SchemeStickySel,
+	SchemeStatusLow, SchemeStatusMedium, SchemeStatusWarn, SchemeStatusHot
 }; /* color schemes */
 enum { NetSupported, NetWMName, NetWMPid, NetWMState, NetWMCheck,
        NetWMFullscreen, NetActiveWindow, NetWMWindowType,
@@ -215,6 +216,7 @@ static void destroynotify(XEvent *e);
 static void detach(Client *c);
 static void detachstack(Client *c);
 static Monitor *dirtomon(int dir);
+static int statustext(char *text, int x, int render);
 static void drawbar(Monitor *m);
 static void drawbars(void);
 static void enternotify(XEvent *e);
@@ -515,7 +517,7 @@ buttonpress(XEvent *e)
 			arg.ui = 1 << i;
 		} else if (ev->x < x + TEXTW(selmon->ltsymbol))
 			click = ClkLtSymbol;
-		else if (ev->x > (x = selmon->ww - (int)TEXTW(stext) + lrpad - 2)) {
+		else if (ev->x > (x = selmon->ww - statustext(stext, 0, 0) - 2)) {
 			click = ClkStatusText;
 			char *text = rawstext;
 			int j = -1;
@@ -526,7 +528,7 @@ buttonpress(XEvent *e)
 				if ((unsigned char)text[j] < ' ') {
 					ch = text[j];
 					text[j] = '\0';
-					x += TEXTW(text) - lrpad;
+					x += statustext(text, 0, 0);
 					text[j] = ch;
 					text += j + 1;
 					j = -1;
@@ -831,6 +833,41 @@ gettagmask(Monitor *m)
 	return occ;
 }
 
+/* ^0^ resets the foreground; ^1^..^4^ select the status palette.
+ * Use the same parser for drawing, total width and clickable block widths. */
+int
+statustext(char *text, int x, int render)
+{
+	static const int palette[] = { SchemeStatus, SchemeStatusLow,
+		SchemeStatusMedium, SchemeStatusWarn, SchemeStatusHot };
+	char *start = text, *p = text;
+	int width = 0, w, selected = SchemeStatus;
+	char saved;
+
+	for (;;) {
+		if (!*p || (p[0] == '^' && p[1] >= '0' && p[1] <= '4' && p[2] == '^')) {
+			saved = *p;
+			*p = '\0';
+			w = drw_fontset_getwidth(drw, start);
+			if (render && w) {
+				drw_setscheme(drw, scheme[selected]);
+				drw_text(drw, x + width, 0, w, bh, 0, start, 0);
+			}
+			width += w;
+			*p = saved;
+			if (!saved)
+				break;
+			selected = palette[p[1] - '0'];
+			p += 3;
+			start = p;
+		} else
+			p++;
+	}
+	if (render)
+		drw_setscheme(drw, scheme[SchemeStatus]);
+	return width;
+}
+
 void
 drawbar(Monitor *m)
 {
@@ -844,8 +881,9 @@ drawbar(Monitor *m)
 	/* draw status first so it can be overdrawn by tags later */
 	if (m == selmon) { /* status is only drawn on selected monitor */
 		drw_setscheme(drw, scheme[SchemeStatus]);
-		tw = TEXTW(stext) - lrpad + 2; /* 2px right padding */
-		drw_text(drw, m->ww - tw, 0, tw, bh, 0, stext, 0);
+		tw = statustext(stext, 0, 0) + 2; /* 2px right padding */
+		drw_rect(drw, m->ww - tw, 0, tw, bh, 1, 1);
+		statustext(stext, m->ww - tw, 1);
 	}
 
 	occ = gettagmask(m);

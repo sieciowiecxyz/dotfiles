@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Unified severity palette: default, green, yellow, orange-red.
+# ^0^ restores the default text colour after each metric.
+metric() {
+	local value="$1" medium="$2" high="$3" very_high="$4" label="$5" colour=0
+	if (( value >= very_high )); then colour=4
+	elif (( value >= high )); then colour=3
+	elif (( value >= medium )); then colour=2
+	fi
+	printf '^%s^%s^0^' "$colour" "$label"
+}
+load_metric() {
+	metric "$1" 30 60 90 "${1}%"
+}
+
 cache_dir="${XDG_RUNTIME_DIR:-/tmp}/statusbar-${USER}"
 cpu_env_file="$cache_dir/cpu.env"
 cache_script="${HOME}/.local/bin/statusbar/sb-sysstat-cache"
@@ -42,7 +56,12 @@ esac
 
 # shellcheck disable=SC1090
 source "$cpu_env_file"
-printf '🧠%s%% %sC %sG\n' \
-	"${total_percent:-0}" \
-	"${cpu_temp_c:-0}" \
-	"$(free --mebi | awk 'NR==2 {printf "%d", ($3 / 1024) + 0.5}')"
+# MemAvailable includes reclaimable cache; no swap on this machine.
+read -r ram_used ram_percent < <(awk '
+ /MemTotal:/ {total=$2} /MemAvailable:/ {avail=$2}
+ END {printf "%d %d\n", (total-avail)/1048576+0.5, 100*(total-avail)/total}
+' /proc/meminfo)
+printf '🧠%s %s %s\n' \
+ "$(load_metric "${total_percent:-0}")" \
+ "$(metric "${cpu_temp_c:-0}" 60 80 90 "${cpu_temp_c:-0}C")" \
+ "$(metric "$ram_percent" 50 80 90 "${ram_used}G")"

@@ -1,11 +1,9 @@
 export PATH="$HOME/.local/bin:$HOME/.local/bin/statusbar:$PATH"
 export PATH="$HOME/.cargo/bin:$PATH"
-export PATH="$PATH:/home/sieciowiec/.lmstudio/bin"
 export TERMINAL="st"
 export EDITOR="nvim"
 export HISTFILESIZE=20000
 export HISTSIZE=10000
-export LOCATION="Warsaw"
 
 export PNPM_HOME="$HOME/.local/share/pnpm"
 case ":$PATH:" in
@@ -14,3 +12,6 @@ case ":$PATH:" in
 esac
 
 . "$HOME/.cargo/env"
+
+# Keep machine-specific locations and local paths outside the public dotfiles.
+[ ! -r "$HOME/.config/shell/local-env.sh" ] || . "$HOME/.config/shell/local-env.sh"

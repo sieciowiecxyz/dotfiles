@@ -32,5 +32,3 @@ bindkey '^[[C' autosuggest-accept
 
 # Keep a slim beam cursor in st instead of the default block.
 [[ -t 1 ]] && printf '\e[5 q'
-# Encrypted password store managed by pass.
-export PASSWORD_STORE_DIR="$HOME/dev/shell/pass"

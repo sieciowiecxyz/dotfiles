@@ -1,13 +1,9 @@
 #!/bin/sh
-#rclone mount nx33935.your-storageshare.de: /home/sieciowiec/nextcloud \
-#  --vfs-cache-mode writes \
-#  --dir-cache-time 1m \
-#  --attr-timeout 5s \
-#  --vfs-read-chunk-size 64M \
-#  --vfs-read-chunk-size-limit 500M \
-#  --allow-other &
+[ -r "$HOME/.config/shell/local-env.sh" ] && . "$HOME/.config/shell/local-env.sh"
+: "${NXM_REMOTE:?Set NXM_REMOTE in ~/.config/shell/local-env.sh}"
+mountpoint=${NXM_MOUNTPOINT:-$HOME/nextcloud}
 
-rclone mount nx33935.your-storageshare.de: /home/sieciowiec/nextcloud \
+rclone mount "$NXM_REMOTE" "$mountpoint" \
   --vfs-cache-mode writes \
   --allow-other \
   --uid=$(id -u) --gid=$(id -g) \

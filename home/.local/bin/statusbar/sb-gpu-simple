@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Unified severity palette: default, green, yellow, orange-red.
+# ^0^ restores the default text colour after each metric.
+metric() {
+	local value="$1" medium="$2" high="$3" very_high="$4" label="$5" colour=0
+	if (( value >= very_high )); then colour=4
+	elif (( value >= high )); then colour=3
+	elif (( value >= medium )); then colour=2
+	fi
+	printf '^%s^%s^0^' "$colour" "$label"
+}
+load_metric() {
+	metric "$1" 30 60 90 "${1}%"
+}
+
 cache_dir="${XDG_RUNTIME_DIR:-/tmp}/statusbar-${USER}"
 gpu_env_file="$cache_dir/gpu.env"
 cache_script="${HOME}/.local/bin/statusbar/sb-sysstat-cache"
@@ -26,10 +40,14 @@ read_cached_gpu_status() {
 
 	used_gib="$(format_gib_int "${gpu_mem_used_mib:-0}")"
 
-	printf '🎮%s%% %sC %sG\n' \
-		"${gpu_percent:-0}" \
-		"${gpu_temp_c:-0}" \
-		"${used_gib}"
+	local vram_percent=0
+	if (( gpu_mem_total_mib > 0 )); then
+		vram_percent=$((100 * gpu_mem_used_mib / gpu_mem_total_mib))
+	fi
+	printf '🎮%s %s %s\n' \
+		"$(load_metric "$gpu_percent")" \
+		"$(metric "$gpu_temp_c" 50 75 85 "${gpu_temp_c}C")" \
+		"$(metric "$vram_percent" 50 80 95 "${used_gib}G")"
 }
 
 gpu_vram_hogs() {

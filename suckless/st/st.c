@@ -1145,7 +1145,10 @@ kscrollup(const Arg *a)
 	if (n > TSCREEN.size - term.row - TSCREEN.off) n = TSCREEN.size - term.row - TSCREEN.off;
 	while (!TLINE(-n)) --n;
 	TSCREEN.off += n;
-	/* Keep selections valid when their coordinates leave the viewport. */
+	/*
+	 * Keep selection positions in the ring buffer, even once they leave the
+	 * visible viewport.  The stock scrollback patch clears them at that point.
+	 */
 	selscrollview(n);
 	tfulldirt();
 }

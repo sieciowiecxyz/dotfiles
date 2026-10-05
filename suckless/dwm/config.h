@@ -45,6 +45,10 @@ static const char *colors[][3] = {
 	/*               fg              bg              border */
 	[SchemeNorm]      = { normfgcolor,     normbgcolor,     normbordercolor },
 	[SchemeSel]       = { selfgcolor,      selbgcolor,      selbordercolor },
+	[SchemeStatusLow] = { "#eeeeee", statusbgcolor, normbordercolor },
+	[SchemeStatusMedium] = { "#a3d977", statusbgcolor, normbordercolor },
+	[SchemeStatusWarn] = { "#ffd75f", statusbgcolor, normbordercolor },
+	[SchemeStatusHot]  = { "#ff784f", statusbgcolor, normbordercolor },
 	[SchemeStatus]    = { statusfgcolor,   statusbgcolor,   normbordercolor },
 	[SchemeTagsNorm]  = { tagsnormfgcolor, tagsnormbgcolor, normbordercolor },
 	[SchemeTagsSel]   = { tagsselfgcolor,  tagsselbgcolor,  selbordercolor },
