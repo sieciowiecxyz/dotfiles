@@ -1,39 +1,38 @@
 #!/bin/sh
 
-[ -f "$HOME/.config/shell/env.sh" ] && . "$HOME/.config/shell/env.sh"
+[ ! -r "$HOME/.config/shell/env.sh" ] || . "$HOME/.config/shell/env.sh"
 
-# Keep X idle policy enabled. dwm-idle/power-mode may force display off later.
+export XDG_SESSION_TYPE=x11
+export XDG_CURRENT_DESKTOP=dwm
+export XDG_SESSION_DESKTOP=dwm
+export DESKTOP_SESSION=dwm
+unset WAYLAND_DISPLAY
+
+# Preserve the integration scripts shipped by Arch packages.
+if [ -d /etc/X11/xinit/xinitrc.d ]; then
+    for script in /etc/X11/xinit/xinitrc.d/?*.sh; do
+        [ ! -x "$script" ] || . "$script"
+    done
+    unset script
+fi
+
+# Import session identity after the standard DISPLAY/XAUTHORITY setup.
+systemctl --user unset-environment WAYLAND_DISPLAY
+systemctl --user import-environment PATH XDG_SESSION_TYPE XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION
+dbus-update-activation-environment --systemd PATH XDG_SESSION_TYPE XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION
+
 xset +dpms
 xset dpms 360 360 360
 xset s 360 360
+xset r rate 300 50
 
-[ -f ~/.nvidia-settings-rc ] && nvidia-settings --load-config-only &
-
-setbg ~/.local/share/wallpapers/black-3840x2160.png
-
+if [ -f "$HOME/.nvidia-settings-rc" ]; then
+    nvidia-settings --load-config-only &
+fi
+setbg "$HOME/.local/share/wallpapers/black-3840x2160.png"
 gen-xresources
-
 setxkbmap -layout pl -option ''
-
-dwmblocks &
-
-xset r rate 300 50 &
-
-DWM_IDLE_SCREEN_OFF_CMD="power-mode blank"
-DWM_IDLE_SUSPEND_SECONDS=0
-export DWM_IDLE_SCREEN_OFF_CMD
-export DWM_IDLE_SUSPEND_SECONDS
-dwm-idle &
-
-# Inject environment to systemd BEFORE starting services
-systemctl --user import-environment DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE WAYLAND_DISPLAY
-dbus-update-activation-environment --systemd DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE WAYLAND_DISPLAY
-
-# Start graphical target for systemd user services
-systemctl --user start graphical-session.target
-
-gnome-keyring-daemon --start --components=secrets &
-
 power-mode apply-current --quiet >/dev/null 2>&1 &
 
-exec dwm
+# D-Bus/systemd activate GNOME Keyring on demand.
+exec dwm-session

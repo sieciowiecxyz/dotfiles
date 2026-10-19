@@ -1,17 +1,16 @@
-export PATH="$HOME/.local/bin:$HOME/.local/bin/statusbar:$PATH"
-export PATH="$HOME/.cargo/bin:$PATH"
 export TERMINAL="st"
 export EDITOR="nvim"
 export HISTFILESIZE=20000
 export HISTSIZE=10000
+export PNPM_HOME="${PNPM_HOME:-$HOME/.local/share/pnpm}"
 
-export PNPM_HOME="$HOME/.local/share/pnpm"
-case ":$PATH:" in
-  *":$PNPM_HOME:"*) ;;
-  *) export PATH="$PNPM_HOME:$PATH" ;;
-esac
+[ ! -r "$HOME/.cargo/env" ] || . "$HOME/.cargo/env"
 
-. "$HOME/.cargo/env"
-
-# Keep machine-specific locations and local paths outside the public dotfiles.
+# Private machine-specific settings may extend PATH.
 [ ! -r "$HOME/.config/shell/local-env.sh" ] || . "$HOME/.config/shell/local-env.sh"
+
+# Login shells, interactive shells and X11 can all source this file.
+# Keep command precedence stable and remove repeated/empty PATH entries.
+PATH=$(printf '%s' "$HOME/.cargo/bin:$HOME/.local/bin:$HOME/.local/bin/statusbar:$PNPM_HOME:$PATH" |
+    awk -v RS=: 'length($0) && !seen[$0]++ { printf "%s%s", separator, $0; separator=":" }')
+export PATH

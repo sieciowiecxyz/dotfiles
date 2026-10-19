@@ -1,0 +1,7 @@
+[Unit]
+Description=DWM statusbar
+PartOf=dwm-session.target
+
+[Service]
+ExecStart=%h/.local/bin/dwmblocks
+Restart=on-failure

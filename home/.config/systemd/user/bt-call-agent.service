@@ -1,0 +1,11 @@
+[Unit]
+Description=Bluetooth call audio agent
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/bt-call-agent.sh
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

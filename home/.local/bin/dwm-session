@@ -1,0 +1,23 @@
+#!/bin/sh
+# Keep the systemd session lifetime tied to the window manager, including logout.
+wm_pid=
+cleanup() {
+    trap - EXIT
+    if [ -n "$wm_pid" ]; then
+        kill -TERM "$wm_pid" 2>/dev/null || :
+        wait "$wm_pid" 2>/dev/null || :
+    fi
+    systemctl --user stop dwm-session.target
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+systemctl --user start dwm-session.target || exit 1
+dwm &
+wm_pid=$!
+wait "$wm_pid"
+status=$?
+wm_pid=
+exit "$status"

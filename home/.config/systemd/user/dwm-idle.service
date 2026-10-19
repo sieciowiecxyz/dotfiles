@@ -1,0 +1,9 @@
+[Unit]
+Description=DWM idle screen policy
+PartOf=dwm-session.target
+
+[Service]
+Environment="DWM_IDLE_SCREEN_OFF_CMD=power-mode blank"
+Environment=DWM_IDLE_SUSPEND_SECONDS=0
+ExecStart=%h/.local/bin/dwm-idle
+Restart=on-failure
