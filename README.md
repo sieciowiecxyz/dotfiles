@@ -8,7 +8,6 @@ The repository intentionally contains configuration, scripts, patches, and sourc
 
 - `home/` — files mirrored into `$HOME`
 - `suckless/` — canonical source trees; local DWM fork based on 6.8
-- `etc/` — reviewed system configuration examples
 - `packages/` — native and AUR package lists
 - `scripts/` — installation and rebuild helpers
 - `docs/` — machine setup notes
@@ -22,8 +21,14 @@ Programs go to `~/.local/bin`, which must precede `/usr/local/bin` in PATH.
 Use `git -C ~/dev/dotfiles` (or the `dotfiles` shell alias) for version control.
 Source trees are maintained directly in this repository, without nested Git repositories.
 
-The 2026-09-06 migration preserved original source trees and their Git histories,
-the old DWM 6.4 executable, and the former bare repository in
-`~/dev/dotfiles-backups/20260906-migration/`.
-The active DWM source is the former `dwm-upstream`, with its custom config and
-the current `screenshot-select` binding. Historical test reports describe past tests.
+DWM 6.8 and the everyday st 0.9.3 are maintained here. The separate
+socket-enabled st 0.9.1 belongs to `sieciowiecxyz/interview`, under `streamer/st/`;
+it is not installed by this repository.
+
+Migration backups remain in `~/dev/dotfiles-backups/20260906-migration/`.
+DWM 6.4 source and executable backups were removed on 2026-10-19.
+Historical test reports describe past tests.
+
+Package lists record explicitly installed packages: `pacman -Qqen` for native
+packages and `pacman -Qqem` for foreign packages (usually AUR).
+Changes are committed and pushed manually when requested.

@@ -1,0 +1,20 @@
+#!/bin/sh
+
+# sb-power - Pobiera RZECZYWISTY pobór prądu (AC) prosto z gniazdka Tasmota
+# Ustawiono sztywny timeout (1 sekunda), aby nie zablokować paska w przypadku braku sieci.
+
+json=$(curl -s --max-time 1 "http://192.168.1.51/cm?cmnd=Status%208" 2>/dev/null)
+
+if [ -n "$json" ]; then
+    # Wyciągamy samą liczbę (Watów) omijając instalację ciężkiego `jq`
+    power=$(echo "$json" | grep -o '"Power":[0-9]*' | cut -d':' -f2)
+
+    if [ -n "$power" ]; then
+        echo "⚡ ${power}W"
+    else
+        echo "⚡ Err"
+    fi
+else
+    # Gdy Tasmota jest odłączona od prądu lub nie ma WiFi
+    echo "⚡ N/A"
+fi

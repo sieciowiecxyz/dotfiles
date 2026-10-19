@@ -15,3 +15,13 @@
   restarted via SIGHUP; the running executable checksum matches the new build.
 - `/usr/local/bin/dwm` forwards to `~/.local/bin/dwm` for older session PATHs.
 - No remote push was performed. Previous test reports are historical records.
+
+## Current layout, 2026-10-19
+
+DWM 6.4 source and executable backups have been removed. The socket-enabled
+st 0.9.1 source was moved from the migration backup to
+`~/dev/rust/interview/streamer/st` and published in that repository. Its nested
+Git history is preserved separately as `src/st-socket-history.git` in the
+migration backup. The source under `suckless/st` remains the everyday st 0.9.3.
+The statements above describe the original migration, not the current remote
+publication state.

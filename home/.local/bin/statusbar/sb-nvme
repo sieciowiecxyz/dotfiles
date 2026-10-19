@@ -1,0 +1,68 @@
+#!/bin/bash
+set -eu
+
+# NVMe I/O monitor. Reads kernel block-layer counters from /sys/block/nvme*n[0-9]/stat
+# (sectors read/written, kept in RAM) — no SMART polling, zero extra wear.
+# Shows read rate, write rate (since previous run) and free space left on /.
+
+case ${BLOCK_BUTTON:-0} in
+	1)
+		notify-send "💾 NVMe I/O" "$(awk '
+			{ r += $3; w += $7 }
+			END { printf "Since boot: %.1f GiB read, %.1f GiB written\n", r*512/1073741824, w*512/1073741824 }
+		' /sys/block/nvme*n[0-9]/stat)" ;;
+	3)
+		notify-send "💾 NVMe module" "R: read rate since last refresh
+W: write rate since last refresh
+L: free space left on / (GB)
+Kernel counters only — no SMART queries, safe for drive endurance." ;;
+	6) setsid -f "${TERMINAL:-xterm}" -e "\$EDITOR" "$0" ;;
+esac
+
+cache_dir="${XDG_RUNTIME_DIR:-/tmp}/statusbar-${USER}"
+mkdir -p "$cache_dir"
+cache="$cache_dir/nvme.cache"
+now=$(date +%s)
+
+# Outputs "<read_B/s> <write_B/s>" to stdout; writes "<sectors_r> <sectors_w> <epoch>"
+# into the cache, so rates are normalized to real elapsed time, not assumed 5 s.
+read -r rr rw < <(awk -v now="$now" -v cache="$cache" '
+	{ r += $3; w += $7 }
+	END {
+		oldr = -1; oldw = 0; oldt = now - 5
+		if ((getline line < cache) > 0) { split(line, a, " "); oldr = a[1]; oldw = a[2]; oldt = a[3] }
+		close(cache)
+		dt = now - oldt; if (dt < 1) dt = 1
+		dr = 0; dw =0
+		if (oldr >= 0) {
+			dr = r - oldr; if (dr < 0) dr = 0   # negative delta = counter reset (reboot)
+			dw = w - oldw; if (dw < 0) dw = 0
+		}
+		printf "%d %d\n", dr*512/dt + 0.5, dw*512/dt + 0.5
+		printf "%d %d %d\n", r, w, now > cache
+		close(cache)
+	}
+' /sys/block/nvme*n[0-9]/stat)
+
+# Free space rarely changes: re-run df only every 3 min. Clicking the block
+# (BLOCK_BUTTON set by dwmblocks) forces an immediate refresh.
+free_cache="$cache_dir/nvme-free.cache"
+free=""; fts=0
+[ -f "$free_cache" ] && read -r free fts < "$free_cache"
+if [ "${BLOCK_BUTTON:-0}" != 0 ] || [ "$free" = "" ] || [ $((now - fts)) -ge 180 ]; then
+	free=$(df -BG --output=avail / | tail -1 | tr -d 'G ')
+	printf '%s %s\n' "$free" "$now" > "$free_cache"
+fi
+
+# Severity palette matching sb-cpu-simple: ^2^ green, ^3^ orange, ^4^ red.
+sev() {
+	if [ "$1" -ge 500 ]; then echo 4
+	elif [ "$1" -ge 200 ]; then echo 3
+	elif [ "$1" -ge 50 ]; then echo 2
+	else echo 0
+	fi
+}
+
+printf '💾^%s^R:%sB/s^0^ ^%s^W:%sB/s^0^ L:%sG\n' \
+	"$(sev $((rr / 1048576)))" "$(numfmt --to=iec --round=nearest "$rr")" \
+	"$(sev $((rw / 1048576)))" "$(numfmt --to=iec --round=nearest "$rw")" "$free"

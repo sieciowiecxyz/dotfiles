@@ -8,11 +8,11 @@ static const Block blocks[] = {
 	{"",	"sb-volume",	0,	10},
 	{"",	"sb-idle",	10,	13},
 	{"",	"sb-pacpackages",	1800,	8},
+	{"",	"sb-nvme",	5,	21},
 	{"",	"sb-cpu-simple",	2,	18},
 	{"",	"sb-gpu-simple",	2,	27},
 	{"",	"sb-power-mode",	2,	20},
 	{"",	"sb-power",	2,	19},
-	{"", "sb-codex", 900, 28},
 	{"",	"sb-forecast",	9000,	5},
 	{"",	"sb-clock",	1,	1},
 /*	{"",	"sb-cpu",		10,	18}, */

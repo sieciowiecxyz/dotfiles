@@ -1,6 +1,6 @@
 # Statusbar
 
-`dwmblocks/config.h` selects modules; `home/.local/bin/statusbar` contains their
+`suckless/dwmblocks/config.h` selects modules; `home/.local/bin/statusbar` contains their
 scripts. CPU and GPU modules each show load, temperature and memory usage.
 
 The local DWM renderer supports `^0^` (default), `^1^` (white), `^2^` (green),
@@ -28,3 +28,8 @@ Updates use `paru -Qu --color never` (repo + AUR), every 30 minutes and on
 signal 8. Repository results depend on the last database sync, while AUR is
 queried online. Ignored packages are excluded. Failed checks display `📦?`.
 Left click runs `paru -Syu`; middle click displays the package list.
+
+The current configuration includes `sb-nvme` for NVMe read/write rates and
+free space on `/`, and `sb-power` for the Tasmota plug's measured power.
+`sb-power` is in `home/.local/bin/`; the other modules are in
+`home/.local/bin/statusbar/`. The Codex quota module is disabled.

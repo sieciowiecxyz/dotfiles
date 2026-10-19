@@ -32,3 +32,8 @@ bindkey '^[[C' autosuggest-accept
 
 # Keep a slim beam cursor in st instead of the default block.
 [[ -t 1 ]] && printf '\e[5 q'
+
+# Load the SSH key into a shared agent; keychain reuses it across terminals.
+if command -v keychain >/dev/null 2>&1; then
+  eval "$(keychain --eval --quiet ~/.ssh/sieciowiec)"
+fi
